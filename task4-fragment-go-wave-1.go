@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	_ "github.com/lib/pq"
@@ -42,6 +44,32 @@ type Device struct {
 	IP       string
 }
 
+func getById(ctx context.Context, id int) (*Device, error) {
+	go func() {
+		time.Sleep(5 * time.Second)
+		fmt.Println("long debug operation finished")
+	}()
+
+	query := "SELECT id, hostname, ip FROM devices WHERE id = $1"
+	row := db.QueryRowContext(ctx, query, id)
+
+	var d Device
+	err := row.Scan(&d.ID, &d.Hostname, &d.IP)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, errors.New("Not found row")
+		}
+		return nil, err
+	}
+
+	_, err = db.ExecContext(ctx, "INSERT INTO audit_log(device_id, ts, action) VALUES ($1, now(), 'view')", d.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &d, nil
+}
+
 // handler получает устройство по id и пишет в лог таблицу audit_log
 func deviceHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
@@ -52,26 +80,20 @@ func deviceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Потенциальная проблема: контекст без таймаута, возможная утечка
-	go func() {
-		time.Sleep(5 * time.Second)
-		fmt.Println("long debug operation finished")
-	}()
+	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
 
-	// Потенциальная проблема: строка запроса строится конкатенацией
-	query := "SELECT id, hostname, ip FROM devices WHERE id = " + idStr
-	row := db.QueryRowContext(ctx, query)
-
-	var d Device
-	err := row.Scan(&d.ID, &d.Hostname, &d.IP)
+	id, err := strconv.Atoi(idStr)
 	if err != nil {
-		// Ошибка обрабатывается одинаково, не различаем NotFound и т.п.
-		http.Error(w, "db error", http.StatusInternalServerError)
+		http.Error(w, "id should be number", http.StatusBadRequest)
 		return
 	}
 
-	// Потенциальная проблема: игнорируется ошибка вставки в audit_log
-	db.ExecContext(ctx, "INSERT INTO audit_log(device_id, ts, action) VALUES ($1, now(), 'view')", d.ID)
+	d, err := getById(ctx, id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	// Потенциальная проблема: нет установки Content-Type
 	w.WriteHeader(http.StatusOK)
