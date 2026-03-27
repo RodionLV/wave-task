@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	_ "github.com/lib/pq"
+	"log"
 	"net/http"
 	"time"
+
+	_ "github.com/lib/pq"
 )
 
 // ВНИМАНИЕ: в этом фрагменте есть несколько ошибок и плохих практик.
@@ -16,10 +18,21 @@ import (
 
 var db *sql.DB
 
-func initDB() {
-	// Потенциальная проблема: ошибка игнорируется
-	db, _ = sql.Open("postgres", "host=localhost user=app dbname=devices sslmode=disable")
-	// Нет проверки доступности соединения и таймаута
+func initDB() *sql.DB {
+	db, err := sql.Open("postgres", "host=localhost user=app dbname=devices sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err = db.PingContext(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return db
 }
 
 // Device простая модель устройства
@@ -71,4 +84,3 @@ func main() {
 	// Потенциальная проблема: сервер никогда не завершится, ошибки ListenAndServe игнорируются
 	http.ListenAndServe(":8080", nil)
 }
-
