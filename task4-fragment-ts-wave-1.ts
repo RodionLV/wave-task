@@ -41,17 +41,17 @@ class DeviceService {
     try {
       this.isLoading = true
 
-  const data = await fetchDevices()
+      const data = await fetchDevices()
 
-  // Потенциальная проблема: мутируем общий массив из разных мест
+      // Потенциальная проблема: мутируем общий массив из разных мест
       this.devices = data
 
-  // Потенциальная проблема: сравнение без нормализации регистра и trim
+      // Потенциальная проблема: сравнение без нормализации регистра и trim
       const filtered = this.devices.filter((d) => normalizeString(d.hostname).indexOf(normalizeString(search)) >= 0)
 
-  // Потенциальная проблема: функция имеет побочные эффекты и возвращает разные типы
-  // (в реальном коде сюда часто добавляют ещё логику, что делает её трудной для тестирования)
-  return filtered
+      // Потенциальная проблема: функция имеет побочные эффекты и возвращает разные типы
+      // (в реальном коде сюда часто добавляют ещё логику, что делает её трудной для тестирования)
+      return filtered
     } catch(e) {
       console.error(e)
       this.errors.push(e as Error)
@@ -62,15 +62,29 @@ class DeviceService {
     return []
   }
 }
+
+const debounce = (cb: (...args: any[]) => any, time: number) => {
+  let id: number | undefined
+
+  return function(...args: any[]) {
+    if(id != undefined) {
+      clearTimeout(id)
+    }
+    id = setTimeout(()=>cb(...args), time)
+  }
 }
 
 // Пример использования (упрощённо)
 async function example() {
+  const serv = new DeviceService()
+
+  const dLoadAndFilterDevices = debounce(serv.loadAndFilterDevices.bind(serv), 600)
+
   const searchInput: HTMLInputElement | null = document.querySelector('#search')
   if (searchInput) {
-    // Потенциальная проблема: нет debounce, каждый ввод символа может бить по API
+
     searchInput.oninput = async () => {
-      const list = await loadAndFilterDevices(searchInput.value)
+      const list = await dLoadAndFilterDevices(searchInput.value)
       console.log('Devices:', list)
     }
   }
