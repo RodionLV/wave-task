@@ -21,28 +21,47 @@ async function fetchDevices(): Promise<Device[]> {
   return (await res.json()) as Device[]
 }
 
-// Глобальное состояние (антипаттерн для большинства приложений)
-let devices: Device[] = []
-let isLoading = false
 
-export async function loadAndFilterDevices(search: string) {
-  isLoading = true
+function normalizeString(str: string): string {
+  return str.trim().toLocaleLowerCase()
+}
 
-  // Потенциальная проблема: нет try/catch, при ошибке состояние "подвиснет"
+class DeviceService {
+  private devices: Device[]
+  private isLoading: boolean
+  private errors: Error[]
+
+  constructor() {
+    this.devices = []
+    this.isLoading = false
+    this.errors = []
+  }
+
+  async loadAndFilterDevices(search: string): Promise<Device[]> {
+    try {
+      this.isLoading = true
+
   const data = await fetchDevices()
 
   // Потенциальная проблема: мутируем общий массив из разных мест
-  devices = data
+      this.devices = data
 
   // Потенциальная проблема: сравнение без нормализации регистра и trim
-  const filtered = devices.filter((d) => d.hostname.indexOf(search) >= 0)
-
-  // "забываем" сбросить isLoading в случае ошибок выше
-  isLoading = false
+      const filtered = this.devices.filter((d) => normalizeString(d.hostname).indexOf(normalizeString(search)) >= 0)
 
   // Потенциальная проблема: функция имеет побочные эффекты и возвращает разные типы
   // (в реальном коде сюда часто добавляют ещё логику, что делает её трудной для тестирования)
   return filtered
+    } catch(e) {
+      console.error(e)
+      this.errors.push(e as Error)
+    } finally {
+      this.isLoading = false
+    }
+    
+    return []
+  }
+}
 }
 
 // Пример использования (упрощённо)
