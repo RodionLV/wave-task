@@ -13,6 +13,11 @@ type Device = {
 async function fetchDevices(): Promise<Device[]> {
   // Потенциальная проблема: игнорируются ошибки сети/HTTP-код
   const res = await fetch('/api/devices')
+
+  if(!res.ok) {
+    throw new Error(res.statusText)
+  }
+
   return (await res.json()) as Device[]
 }
 
