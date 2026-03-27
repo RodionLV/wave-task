@@ -95,7 +95,7 @@ func deviceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Потенциальная проблема: нет установки Content-Type
+	w.Header().Add("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(fmt.Sprintf("Device: %s (%s)", d.Hostname, d.IP)))
 }
@@ -104,5 +104,8 @@ func main() {
 	initDB()
 	http.HandleFunc("/device", deviceHandler)
 	// Потенциальная проблема: сервер никогда не завершится, ошибки ListenAndServe игнорируются
-	http.ListenAndServe(":8080", nil)
+	err := http.ListenAndServe(":8080", nil)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
