@@ -44,14 +44,22 @@ type Device struct {
 	IP       string
 }
 
-func getById(ctx context.Context, id int) (*Device, error) {
+type DeviceRepo struct {
+	db *sql.DB
+}
+
+func NewDeviceRepo(db *sql.DB) *DeviceRepo {
+	return &DeviceRepo{db: db}
+}
+
+func (r *DeviceRepo) GetById(ctx context.Context, id int) (*Device, error) {
 	go func() {
 		time.Sleep(5 * time.Second)
 		fmt.Println("long debug operation finished")
 	}()
 
 	query := "SELECT id, hostname, ip FROM devices WHERE id = $1"
-	row := db.QueryRowContext(ctx, query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 
 	var d Device
 	err := row.Scan(&d.ID, &d.Hostname, &d.IP)
@@ -62,7 +70,7 @@ func getById(ctx context.Context, id int) (*Device, error) {
 		return nil, err
 	}
 
-	_, err = db.ExecContext(ctx, "INSERT INTO audit_log(device_id, ts, action) VALUES ($1, now(), 'view')", d.ID)
+	_, err = r.db.ExecContext(ctx, "INSERT INTO audit_log(device_id, ts, action) VALUES ($1, now(), 'view')", d.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -70,8 +78,22 @@ func getById(ctx context.Context, id int) (*Device, error) {
 	return &d, nil
 }
 
+type IDeviceRepo interface {
+	GetById(ctx context.Context, id int) (*Device, error)
+}
+
+type DeviceHandler struct {
+	repo IDeviceRepo
+}
+
+func NewDeviceHandler(repo IDeviceRepo) *DeviceHandler {
+	return &DeviceHandler{
+		repo: repo,
+	}
+}
+
 // handler получает устройство по id и пишет в лог таблицу audit_log
-func deviceHandler(w http.ResponseWriter, r *http.Request) {
+func (h *DeviceHandler) DeviceHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 
 	idStr := r.URL.Query().Get("id")
@@ -89,7 +111,7 @@ func deviceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	d, err := getById(ctx, id)
+	d, err := h.repo.GetById(ctx, id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -101,8 +123,11 @@ func deviceHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	initDB()
-	http.HandleFunc("/device", deviceHandler)
+	db := initDB()
+	repo := NewDeviceRepo(db)
+	handler := NewDeviceHandler(repo)
+
+	http.HandleFunc("/device", handler.DeviceHandler)
 	// Потенциальная проблема: сервер никогда не завершится, ошибки ListenAndServe игнорируются
 	err := http.ListenAndServe(":8080", nil)
 	if err != nil {
